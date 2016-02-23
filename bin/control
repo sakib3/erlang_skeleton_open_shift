@@ -1,0 +1,108 @@
+#!/bin/bash -eu
+
+#TODO: read following link and use here http://mywiki.wooledge.org/ProcessManagement
+
+source "$OPENSHIFT_CARTRIDGE_SDK_BASH"
+export PATH="$OPENSHIFT_ERL_DIR/usr/bin/:$PATH"
+pid_file="${OPENSHIFT_ERL_DIR}/erlang.pid"
+
+function start() {
+  if is_running; then
+    echo "application $OPENSHIFT_APP_NAME is already running"
+    exit 1
+  fi
+  build
+  cd "$OPENSHIFT_REPO_DIR"
+  if [ -f start.sh ]; then
+    echo "Starting $OPENSHIFT_APP_NAME"
+    nohup ./start.sh
+    ret="$?"
+    if [ "$ret" -eq 0 ]; then
+      npid=$(/sbin/pidof beam.smp)
+      echo "$npid" > "$pid_file"
+    else
+      echo "application $OPENSHIFT_APP_NAME failed to start - $ret" 1>&2
+      exit "$ret"
+    fi
+  fi
+  echo "started $OPENSHIFT_APP_NAME"
+}
+
+function stop() {
+  echo "stopping $OPENSHIFT_APP_NAME application"
+  cd "$OPENSHIFT_REPO_DIR"
+  if [ -f "$pid_file" ]; then
+    npid=$(cat "$pid_file" 2> /dev/null)
+    if [ -n "$npid" ]; then
+      echo "stopping $OPENSHIFT_APP_NAME"
+      kill "$npid"
+    fi
+  else
+    npid=$(/sbin/pidof beam.smp)
+    if [ -n "$npid" ]; then
+      echo "stopping erlang application"
+      kill "$npid"
+    fi
+  fi
+  echo "$OPENSHIFT_APP_NAME application stopped"
+  rm -f "$pid_file"
+}
+
+function restart() {
+  stop
+  start
+}
+
+function is_running() {
+  if [ -f "$pid_file" ]; then
+    npid=$(cat "$pid_file" 2> /dev/null)
+    if [ `ps --no-heading --pid "$npid" | wc -l` -gt 0 ] ; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+function status() {
+  if is_running; then
+      echo "$OPENSHIFT_APP_NAME running"
+      return 0
+  fi
+  echo "$OPENSHIFT_APP_NAME not-running"
+  return 1
+}
+
+function build() {
+  cd "$OPENSHIFT_REPO_DIR"
+  if [ -f rebar.config ]; then
+    echo "building $OPENSHIFT_APP_NAME"
+    rebar get-deps && rebar compile
+    echo "application succesfully built"
+  fi
+}
+
+function catchall() {
+  return 0
+}
+
+case "$1" in
+  start)                start ;;
+  stop)                 stop ;;
+  restart)              restart ;;
+  status)               status ;;
+  reload)               catchall ;;
+  tidy)                 catchall ;;
+  pre-build)            catchall ;;
+  build)                build ;;
+  deploy)               catchall ;;
+  post-deploy)          catchall ;;
+  pre-snapshot)         catchall ;;
+  post-snapshot)        catchall ;;
+  pre-restore)          catchall ;;
+  post-restore)         catchall ;;
+  pre-repo-archive)     catchall ;;
+  update-configuration) catchall ;;
+  *)           exit 0
+esac
+
+exit 0
